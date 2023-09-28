@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PIPE</title>
+
+  <script src="crypto-utils.1.5.11.js"></script>
+  <script src="https://unpkg.com/@cmdcode/tapscript"></script>
+  <script> const { Address, Script, Signer, Tap, Tx } = window.tapscript </script>
+</head>
+<body>
+Please open the browser developer console for details. Open the HTML file in a text editor to setup...
+<script>
+
+  // NOTE:
+  //
+  // Check the browser developer console to get your private key, raw tx and the commit address. The private key will be generated on every reload.
+  // Store your private key at a safe place and pass it as parameter to createKeyPair() to perform deploy, mint and transfer below using the same account.
+  //
+  // This script only works with taproot addresses (your beneficiary address _must_ start with "bc1p")!
+  // First setup your parameters, then reload the page. open the browser console and send the tx fee sats to the generated address (labelled as 'Send sats to address').
+  //
+  // Once confirmed, paste your resulting raw transaction here to trigger the actual deploy, mint or transfer transactions:
+  // https://mempool.space/tx/push
+  //
+  // Use one of the deploy, mint or transfer functions below by uncommenting what you need and comment what you don't need.
+  //
+  // Feel free to use, edit, distribute or whatever you want to do with this script. CC0 Licensed.
+
+  
+/*
+  deploy(
+          'PIPE',               // TICKER
+          0,                    // ID
+          8,                    // decimals (0 to 8 max)
+          '21000000',           // supply
+          '1000',               // mint limit
+          'bc1pfanz9schc58rhaun0jnhtqa8zulpggaepzrafr9yel7j75cx6w8s5nxqnp', // beneficiary address (receiver)
+          546,                  // sats in beneficiary output
+          '28b05e8b61b62846316819fecfe38ec8469f66b1251678fe2e4ebd1d1067096f', // tx id of utxo to spend from
+          0,                    // vout (switch to either 0 or 1 if you get an invalid schnorr error)
+          5_000,                // tx fee (must include sats for the beneficiary output)
+          'main',               // signet, testnet, main
+          pair.seckey,
+          pair.pubkey
+  )
+*/
+  // uncomment to perform a mint tx
+  const pair = createKeyPair('your privateKey')
+  arr = [
+	'',
+	'',
+	'',
+	'',
+	'',
+	'',
+	''
+  ]
+  for(var i=0;i<arr.length;i++){
+	
+  if(arr[i]===""){
+  
+  }else{
+	  mint(
+			  'PIPE',               // TICKER
+			  0,                    // ID
+			  '1000',               // mint amount
+			  'your reciver Taproot address', // beneficiary address (receiver)
+			  546,                  // sats in beneficiary output
+			  arr[i], // tx id of utxo to spend from
+			  0,                    // vout (switch to either 0 or 1 if you get an invalid schnorr error)
+			  5_000,                // tx fee (must include sats for the beneficiary output)
+			  'main',               // signet, testnet, main
+			  pair.seckey,
+			  pair.pubkey
+	  )
+  }
+  
+  }
+  
+  
+
+  // uncomment to perform a transfer tx
+  // this will only work if you use a private key from a wallet that owns tokens.
+  // the transfer amount will be deducted from the address of the first input's prevout scriptPubKey
+  /*
+  transfer(
+          'PIPE',               // TICKER
+          0,                    // ID
+          '512.234',            // transfer amount
+          'bc1prc5ndjzzc397dzyv8pa2l88kr25926xy73m6gj0zh4cuec0zylyshp8m4w', // beneficiary address (receiver)
+          546,                  // sats in beneficiary output
+          '378a664beb86398f8bfb12749facf8e422ffcb1aad08bf5d0f1aeab8817fb3c2', // tx id of utxo to spend from
+          0,                    // vout (switch to either 0 or 1 if you get an invalid schnorr error)
+          5_000,                // tx fee (must include sats for the beneficiary output)
+          'main',               // signet, testnet, main
+          pair.seckey,
+          pair.pubkey
+  )*/
+
+  function createKeyPair(pk = '')
+  {
+    let privkey
+
+    if(pk !== '')
+    {
+      privkey = pk
+    }
+    else
+    {
+      privkey = bytesToHex(cryptoUtils.Noble.utils.randomPrivateKey())
+    }
+
+    console.log('your private key', privkey);
+
+    const KeyPair = cryptoUtils.KeyPair
+    const seckey = new KeyPair(privkey)
+    const pubkey = seckey.pub.rawX
+
+    return { seckey: seckey, pubkey : pubkey }
+  }
+
+  async function deploy(SYMBOL, ID, DECIMALS, MAX, LIMIT, RECEIVER, RVALUE, TX, VOUT, PVALUE, network, seckey, pubkey)
+  {
+    const ec = new TextEncoder()
+
+    const [ tseckey ] = Tap.getSecKey(seckey.buff)
+    const [ tpubkey ] = Tap.getPubKey(pubkey)
+
+    const address = Address.p2tr.encode(tpubkey, network)
+    const toAddress = Address.p2tr.decode(RECEIVER, network).hex;
+
+    const txdata = Tx.create({
+      vin  : [{
+        txid: TX,
+        vout: VOUT,
+        prevout: {
+          value: PVALUE,
+          scriptPubKey: [ 'OP_1', tpubkey ]
+        },
+      }],
+      vout : [{
+        value: RVALUE,
+        scriptPubKey: [ 'OP_1', toAddress ]
+      },
+      {
+        scriptPubKey: [ 'OP_RETURN', ec.encode('P'), ec.encode('D'), toInt26(SYMBOL), ID, 0, DECIMALS, ''+MAX, ''+LIMIT ]
+      }
+      ]
+    })
+
+    const sig = Signer.taproot.sign(tseckey, txdata, 0)
+    txdata.vin[0].witness = [ sig ]
+
+    await Signer.taproot.verify(txdata, 0, { throws: true })
+
+    console.log('Send sats to address:', address)
+    console.log('Your DEPLOY txhex:', Tx.encode(txdata).hex)
+  }
+
+  async function mint(SYMBOL, ID, MINT, RECEIVER, RVALUE, TX, VOUT, PVALUE, network, seckey, pubkey)
+  {
+    const ec = new TextEncoder()
+
+    const [ tseckey ] = Tap.getSecKey(seckey.buff)
+    const [ tpubkey ] = Tap.getPubKey(pubkey)
+
+    const address = Address.p2tr.encode(tpubkey, network)
+    const toAddress = Address.p2tr.decode(RECEIVER, network).hex;
+
+    const txdata = Tx.create({
+      vin  : [{
+        txid: TX,
+        vout: VOUT,
+        prevout: {
+          value: PVALUE,
+          scriptPubKey: [ 'OP_1', tpubkey ]
+        },
+      }],
+      vout : [{
+        value: RVALUE,
+        scriptPubKey: [ 'OP_1', toAddress ]
+      },
+      {
+        scriptPubKey: [ 'OP_RETURN', ec.encode('P'), ec.encode('M'), toInt26(SYMBOL), ID, 0, ''+MINT ]
+      }
+      ]
+    })
+
+    const sig = Signer.taproot.sign(tseckey, txdata, 0)
+    txdata.vin[0].witness = [ sig ]
+
+    await Signer.taproot.verify(txdata, 0, { throws: true })
+
+    console.log('Send sats to address:', address)
+    console.log('Your MINT txhex:', Tx.encode(txdata).hex)
+
+  }
+
+  async function transfer(SYMBOL, ID, TRANSFER, RECEIVER, RVALUE, TX, VOUT, PVALUE, network, seckey, pubkey)
+  {
+    const ec = new TextEncoder()
+
+    const [ tseckey ] = Tap.getSecKey(seckey.buff)
+    const [ tpubkey ] = Tap.getPubKey(pubkey)
+
+    const address = Address.p2tr.encode(tpubkey, network)
+    const toAddress = Address.p2tr.decode(RECEIVER, network).hex;
+
+    const txdata = Tx.create({
+      vin  : [{
+        txid: TX,
+        vout: VOUT,
+        prevout: {
+          value: PVALUE,
+          scriptPubKey: [ 'OP_1', tpubkey ]
+        },
+      }],
+      vout : [{
+        value: RVALUE,
+        scriptPubKey: [ 'OP_1', toAddress ]
+      },
+        {
+          scriptPubKey: [ 'OP_RETURN', ec.encode('P'), ec.encode('T'), toInt26(SYMBOL), ID, 0, ''+TRANSFER ]
+        }
+      ]
+    })
+
+    const sig = Signer.taproot.sign(tseckey, txdata, 0)
+    txdata.vin[0].witness = [ sig ]
+
+    await Signer.taproot.verify(txdata, 0, { throws: true })
+
+    console.log('Send sats to address:', address)
+    console.log('Your TRANSFER txhex:', Tx.encode(txdata).hex)
+
+  }
+
+  function bytesToHex(bytes) {
+    return bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, "0"), "");
+  }
+
+  function toString26(num) {
+    var alpha = charRange('a', 'z');
+    var result = '';
+
+    // no letters for 0 or less
+    if (num < 1) {
+      return result;
+    }
+
+    var quotient = num,
+            remainder;
+
+    // until we have a 0 quotient
+    while (quotient !== 0) {
+      // compensate for 0 based array
+      var decremented = quotient - 1;
+
+      // divide by 26
+      quotient = Math.floor(decremented / 26);
+
+      // get remainder
+      remainder = decremented % 26;
+
+      // prepend the letter at index of remainder
+      result = alpha[remainder] + result;
+    }
+
+    return result;
+  }
+
+  function toInt26(str) {
+    var alpha = charRange('a', 'z');
+    var result = 0;
+
+    // make sure we have a usable string
+    str = str.toLowerCase();
+    str = str.replace(/[^a-z]/g, '');
+
+    // we're incrementing j and decrementing i
+    var j = 0;
+    for (var i = str.length - 1; i > -1; i--) {
+      // get letters in reverse
+      var char = str[i];
+
+      // get index in alpha and compensate for
+      // 0 based array
+      var position = alpha.indexOf(char);
+      position++;
+
+      // the power kinda like the 10's or 100's
+      // etc... position of the letter
+      // when j is 0 it's 1s
+      // when j is 1 it's 10s
+      // etc...
+      var power = Math.pow(26, j);
+
+      // add the power and index to result
+      result += power * position;
+      j++;
+    }
+
+    return result;
+  }
+
+  function charRange(start, stop) {
+    var result = [];
+
+    // get all chars from starting char
+    // to ending char
+    var i = start.charCodeAt(0),
+            last = stop.charCodeAt(0) + 1;
+    for (i; i < last; i++) {
+      result.push(String.fromCharCode(i));
+    }
+
+    return result;
+  }
+
+  // Testing parsability by decoding a raw transaction
+  //const res = Tx.decode('020000000001017722adeb7e041dc105574226e1afb3161876a2ea74e569624af6c3392009d28d0000000000fdffffff0222020000000000002251204f6622c317c50e3bf7937ca77583a7173e1423b90887d48ca4cffd2f5306d38f0000000000000000146a0150015404000463e90000073531322e32333401402793bfd3b4ef5ea865b23c2c5b564418b0006f71efd0bb44093b083c52e16222125ab9c9d0a4db0afcd4f73a920b9e03e3ca88cb61fd4d5f6bd2f69be36958b300000000');
+
+  // should return a stack that can be used for indexing
+  //console.log(Script.decode(res.vout[1].scriptPubKey, false));
+</script>
+</body>
+</html>
